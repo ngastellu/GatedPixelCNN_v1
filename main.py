@@ -1,4 +1,3 @@
-from torch import nn, optim, cuda, backends
 from utils import *
 from models import *
 from torch.utils.tensorboard import SummaryWriter
@@ -9,25 +8,25 @@ run = get_input()
 if run == -1:  # user-defined parameters
     # architecture
     model = 1 #1 is Gated PixelCNN
-    filters = 3 # number of convolutional filters or feature maps
-    layers = 5 # number of hidden convolutional layers
+    filters = 2 # number of convolutional filters or feature maps
+    layers = 2 # number of hidden convolutional layers
     bound_type = 0 # type of boundary layer for generation, 0 = empty
     boundary_layers = 2 # number of layers of conv_fields between output sample and boundary
     softmax_temperature = 0 # ratio to batch mean at which softmax will sample, set to 0 to sample at training temperature
 
     # training
-    training_data = 2 # select training set: 1 - nanoparticle aggregate, 2 - MAC
+    training_data = 1 # select training set: 1 - nanoparticle aggregate, 2 - MAC
     training_batch = 2048 # size of training and test batches - it will try to run at this size, but if it doesn't fit it will go smaller
     sample_batch_size = 2048  # max batch size for sample generator
     n_samples = 1  # total samples to be generated when we generate, must not be zero (it may make more if there is available memory)
     run_epochs = 1000 # number of incremental epochs which will be trained over - if zero, will run just the generator
-    dataset_size = 400 # the maximum number of samples to consider from our dataset
-    train_margin = 1e-2 # the convergence criteria for training error
+    dataset_size = 1000 # the maximum number of samples to consider from our dataset
+    train_margin = 1e-3 # the convergence criteria for training error
     average_over = 5 # how many epochs to average over to determine convergence
     outpaint_ratio = 2 # sqrt of size of output relative to input
     generation_type = 2 # 1 - fast for many small images, 2 - fast for few, large images
     GPU = 1  # if 1, runs on GPU (requires CUDA), if 0, runs on CPU (slow! and may break some functions)
-else: # when running on cluster, can take arguments from a batch_parameters script
+else: # when running on cluster, can take arguments from the batch_parameters script
     with open('batch_parameters.pkl', 'rb') as f:
         inputs = pickle.load(f)
     # architecture
@@ -62,8 +61,8 @@ prev_epoch = 0
 if __name__ == '__main__':  # run it!
     net, conv_field, optimizer, sample_0, input_x_dim, input_y_dim, sample_x_dim, sample_y_dim = initialize_training(model, filters, filter_size, layers, training_data, outpaint_ratio, dataset_size)
     net, optimizer, prev_epoch = load_checkpoint(net, optimizer, dir_name, GPU, prev_epoch)
-    channels = sample_0.shape[1]
-    out_maps = len(np.unique(sample_0)) + 1
+    channels = sample_0.shape[1] # must be 1 or this isn't going to work
+    out_maps = len(np.unique(sample_0)) + 1 # need n_classes + 1 outputs (explicit padding is encoded as 0, empty as 0.5, filled as 1)
 
     input_analysis = analyse_inputs(training_data, out_maps, dataset_size) # analyse inputs to prepare accuracy metrics
 
@@ -76,16 +75,15 @@ if __name__ == '__main__':  # run it!
         net = nn.DataParallel(net) # go to multi-GPU training
         print("Using", torch.cuda.device_count(), "GPUs")
         net.to(torch.device("cuda:0"))
-        #print(summary(net, (channels, input_x_dim, input_y_dim)))  # doesn't work on CPU, not sure why
+        print(summary(net, (channels, input_x_dim, input_y_dim)))  # doesn't work on CPU, not sure why
 
     max_epochs = run_epochs + prev_epoch + 1
 
     ## BEGIN TRAINING/GENERATION
-    if run_epochs == 0:  # no training, just samples
+    if run_epochs == 0:  # no training, just generate and analyze samples
         prev_epoch += 1
         epoch = prev_epoch
 
-        # to a test of the net to get it warmed up
         training_batch, changed = get_training_batch_size(training_data, training_batch, model, filters, filter_size, layers, out_maps, channels, dataset_size, GPU)  # confirm we can keep on at this batch size
         if changed == 1:  # if the training batch is different, we have to adjust our batch sizes and dataloaders
             tr, te = get_dataloaders(training_data, training_batch, dataset_size)
@@ -95,14 +93,14 @@ if __name__ == '__main__':  # run it!
 
         sample, time_ge, n_samples, agreements, output_analysis = generation(generation_type, dir_name, input_analysis, outpaint_ratio, epoch, model, filters, filter_size, layers, net, writer, te, out_maps, conv_field, sample_x_dim, sample_y_dim, n_samples, sample_batch_size, bound_type, training_data, boundary_layers, channels, softmax_temperature, dataset_size, GPU, cuda)
 
-    else: #train it!
+    else: #train it! then generate and analyze samples
         epoch = prev_epoch + 1
-        converged = 0
+        converged = 0 # convergence flag
         tr_err_hist = []
         te_err_hist = []
-        while (epoch <= (max_epochs + 1)) & (converged == 0):#for epoch in range(prev_epoch+1, max_epochs):  # over a certain number of epochs
+        while (epoch <= (max_epochs + 1)) & (converged == 0): # until we converge or hit epoch limit
 
-            if (epoch - prev_epoch) < 3:
+            if (epoch - prev_epoch) < 3: # we can massage the sample batch size for the first few epochs
                 training_batch, changed = get_training_batch_size(training_data, training_batch, model, filters, filter_size, layers, out_maps, channels, dataset_size, GPU)  # confirm we can keep on at this batch size
                 if changed == 1: # if the training batch is different, we have to adjust our batch sizes and dataloaders
                     tr, te = get_dataloaders(training_data, training_batch, dataset_size)
@@ -118,18 +116,13 @@ if __name__ == '__main__':  # run it!
 
             save_ckpt(epoch, net, optimizer, dir_name[:]) #save checkpoint
 
+            # check if we have converged, according to parameters computed in auto_convergence
             converged = auto_convergence(train_margin, average_over, epoch, prev_epoch, net, optimizer, dir_name, tr_err_hist, te_err_hist, max_epochs)
 
             epoch += 1
 
-        tr, te = get_dataloaders(training_data, 4, 100)  # get something from the dataset
-        example = next(iter(tr)).cuda()  # get seeds from test set
-        raw_out = net(example[0:2, :, :, :].float())
-        raw_out = F.softmax(raw_out, dim=1)
-        raw_out = raw_out[0].unsqueeze(1)
-        raw_grid = utils.make_grid(raw_out, nrow=int(out_maps), padding=0)
-        raw_grid = raw_grid[0].cpu().detach().numpy()
-        np.save('raw_outputs/' + dir_name[:], raw_grid)
+        # get a 'raw output' - the network's normalized probabilities for all classes on an image
+        raw_grid, example = get_raw_output(training_data, net, dir_name, out_maps)
 
-        # generate samples
+        # generate & analyze samples
         sample, time_ge, n_samples, agreements, output_analysis = generation(generation_type, dir_name, input_analysis, outpaint_ratio, epoch, model, filters, filter_size, layers, net, writer, te, out_maps, conv_field, sample_x_dim, sample_y_dim, n_samples, sample_batch_size, bound_type, training_data, boundary_layers, channels, softmax_temperature, dataset_size, GPU, cuda)

@@ -1,15 +1,10 @@
-# metrics to determine the performance of our learning algorithm
-import numpy as np
-import torch.nn.functional as F
 import os
-from torch import nn, optim, cuda, backends
-import torch
+from torch import optim, cuda, backends
 from torch.utils import data
+from torchvision.utils import make_grid
 import time
 import pickle
 from torch.utils.data import Dataset
-import numpy as np
-import pickle
 from os import listdir
 from os.path import isfile, join
 import sys
@@ -17,7 +12,6 @@ import tqdm
 from tqdm import tqdm as barthing
 from accuracy_metrics import *
 from models import *
-from Image_Processing_Utils import *
 import argparse
 
 
@@ -33,7 +27,7 @@ class build_dataset(Dataset):
     def __init__(self, training_data, dataset_size):
         if training_data == 1:
             self.samples = np.load('C:\OneDrive\McGill_Simine\Finite_Correlations\PyTorch\PixelCNN\data/small_worm_results.npy', allow_pickle=True).astype('uint8')
-            self.samples = self.samples[5:,:,:,:]
+            self.samples = self.samples[5:,:,:,:] #necessary offset for 'worms' dataset
         elif training_data == 2:
             self.samples = (np.load('C:\OneDrive\McGill_Simine\Finite_Correlations\PyTorch\PixelCNN\data/MAC3/MAC_no_tris_982.npy',allow_pickle=True))
 
@@ -59,7 +53,7 @@ def get_model(model, filters, filter_size, layers, out_maps, channels):
         conv_field = int(np.sum(net.dilation)) + (filter_size - 1) // 2 #(+1 in vertical direction for top block!!)
 
     def init_weights(m): #optional, initialize weights for convolutional layers
-        if (type(m) == nn.Conv2d) or (type(m) == MaskedConv2d):
+        if (type(m) == nn.Conv2d) or (type(m) == MaskedConv2d_h):
             #torch.nn.init.xavier_uniform_(m.weight)
             torch.nn.init.kaiming_uniform_(m.weight, nonlinearity = 'relu')
 
@@ -240,7 +234,7 @@ def auto_convergence(train_margin, average_over, epoch, prev_epoch, net, optimiz
     # set convergence criteria
     # if the test error has increased on average for the last x epochs
     # or if the training error is diverging from the test error by more than
-    test_margin = 10 #times
+    test_margin = 10 # set < 1 to minimize overfitting
     # average_over - the time over which we will average loss in order to determine convergence
     converged = 0
     if (epoch - prev_epoch) <= average_over:  # early checkpointing
@@ -273,6 +267,17 @@ def get_generator(model, filters, filter_size, layers, out_maps, channels, paddi
 
     return net
 
+def get_raw_output(training_data, net, dir_name, out_maps):
+    tr, te = get_dataloaders(training_data, 4, 100)  # get something from the dataset
+    example = next(iter(tr)).cuda()  # get seeds from test set
+    raw_out = net(example[0:2, :, :, :].float())
+    raw_out = F.softmax(raw_out, dim=1)
+    raw_out = raw_out[0].unsqueeze(1)
+    raw_grid = make_grid(raw_out, nrow=int(out_maps), padding=0)
+    raw_grid = raw_grid[0].cpu().detach().numpy()
+    np.save('raw_outputs/' + dir_name[:], raw_grid)
+
+    return raw_grid, example
 
 def generation(generation_type, dir_name, input_analysis, outpaint_ratio, epoch, model, filters, filter_size, layers, net, writer, te, out_maps, conv_field, sample_x_dim, sample_y_dim, n_samples, sample_batch_size, bound_type, training_data, boundary_layers, channels, softmax_temperature, dataset_size, GPU, cuda):
     # generate and analyze new samples
