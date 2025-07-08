@@ -26,10 +26,9 @@ def get_input():
     return run
 
 class build_dataset(Dataset):
-    def __init__(self, configs):
-        np.random.seed(configs.dataset_seed)
-        run_dir = configs.experiment_name
-        if configs.training_dataset == 'amorphous':
+    def __init__(self, training_dataset):
+
+        if training_dataset == 'amorphous':
             self.samples = np.load('data/coords_13944p6.npy', allow_pickle=True)
            # self.samples_identity = np.load('data/ac2d_symbols.npy', allow_pickle=True)
             self.samples = transform_data_amorphous(self.samples)
@@ -50,7 +49,7 @@ class build_dataset(Dataset):
             self.samples = np.concatenate((self.samples,flipped,flipped2),axis=0)
 
 
-        elif configs.training_dataset == 'graphene':
+        elif training_dataset == 'graphene':
             zgnr = read_xyz('data/gnr_zigzag_11x12.xyz')
             agnr = read_xyz('data/gnr_armchair_11x6.xyz')
             self.samples = np.array([zgnr, agnr])
@@ -66,14 +65,14 @@ class build_dataset(Dataset):
 
             self.samples = np.concatenate((self.samples,rot1,rot3,rot2,flipped,flipped2),axis=0)
         
-        elif configs.training_dataset == 'armchair':
+        elif training_dataset == 'armchair':
             agnr = read_xyz('data/gnr_armchair_11x6.xyz')
             self.samples = np.array([agnr, agnr])
             self.samples = transform_data_graphene(self.samples)
             self.samples = np.expand_dims(self.samples, axis=1)
             self.samples = self.samples[:,:,0:106,0:106]
         
-        elif configs.training_dataset == 'zigzag':
+        elif training_dataset == 'zigzag':
             zgnr = read_xyz('data/gnr_zigzag_11x12.xyz')
             self.samples = np.array([zgnr, zgnr])
             self.samples = transform_data_graphene(self.samples)
@@ -85,23 +84,8 @@ class build_dataset(Dataset):
 
         assert self.samples.ndim == 4
 
-        self.dataDims = {
-            'classes' : len(np.unique(self.samples)),
-            'input x dim' : self.samples.shape[-1],
-            'input y dim' : self.samples.shape[-2],
-            'channels' : 1, # hardcode as one so we don't get confused with conditioning variables
-            'dataset length' : len(self.samples),
-            'sample x dim' : self.samples.shape[-1] * configs.sample_outpaint_ratio,
-            'sample y dim' : self.samples.shape[-2] * configs.sample_outpaint_ratio,
-            'conv field' : configs.conv_layers + configs.conv_size // 2
-
-        }
-        a_file = open(f"{run_dir}/datadims.pkl", "wb")
-        pickle.dump(self.dataDims, a_file)
-        a_file.close()
-
         # normalize pixel inputs
-        self.samples[:,0,:,:] = np.array((self.samples[:,0] + 1)/(self.dataDims['classes'])) # normalize inputs on 0--1
+        self.samples[:,0,:,:] = np.array((self.samples[:,0] + 1)/2) # normalize inputs on 0--1
 
 
     def __len__(self):
