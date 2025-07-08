@@ -13,6 +13,8 @@ from tqdm import tqdm as barthing
 from accuracy_metrics import *
 from models import *
 import argparse
+from qcnico.coords_io import read_xyz
+from ase.build import graphene_nanoribbon
 
 
 def get_input():
@@ -24,21 +26,166 @@ def get_input():
     return run
 
 class build_dataset(Dataset):
-    def __init__(self, training_data, dataset_size):
-        if training_data == 1:
-            self.samples = np.load('C:\OneDrive\McGill_Simine\Finite_Correlations\PyTorch\PixelCNN\data/small_worm_results.npy', allow_pickle=True).astype('uint8')
-            self.samples = self.samples[5:,:,:,:] #necessary offset for 'worms' dataset
-        elif training_data == 2:
-            self.samples = (np.load('C:\OneDrive\McGill_Simine\Finite_Correlations\PyTorch\PixelCNN\data/MAC3/MAC_no_tris_982.npy',allow_pickle=True))
+    def __init__(self, configs):
+        np.random.seed(configs.dataset_seed)
+        run_dir = configs.experiment_name
+        if configs.training_dataset == 'amorphous':
+            self.samples = np.load('data/coords_13944p6.npy', allow_pickle=True)
+           # self.samples_identity = np.load('data/ac2d_symbols.npy', allow_pickle=True)
+            self.samples = transform_data_amorphous(self.samples)
+            self.pick=np.load('data/p6dot7andmore.npy', allow_pickle=True)
+            self.samples=self.samples[self.pick.astype('int').tolist()]
+            self.samples = np.expand_dims(self.samples, axis=1)
 
-        out_maps = len(np.unique(self.samples[0,:,:,:])) + 1 # how many output classes? add one for padding
-        self.samples = np.array((self.samples[0:dataset_size] + 1)/(out_maps - 1)) # normalize inputs on 0,1,2...
+            self.samples = self.samples[:,:,0:106,0:106]
+        #   self.samples2 = self.samples[:,:,-212:,-212:]
+
+            # augment by horizontal flips
+            flipped = np.flip(self.samples.copy(),axis=3)
+            flipped2 = np.flip(self.samples.copy(),axis=2)
+           # rot1=np.rot90(self.samples.copy(),k=1,axes=(2,3))
+            #rot2=np.rot90(self.samples.copy(),k=2,axes=(2,3))
+            #rot3=np.rot90(self.samples.copy(),k=3,axes=(2,3))
+
+            self.samples = np.concatenate((self.samples,flipped,flipped2),axis=0)
+
+
+        elif configs.training_dataset == 'graphene':
+            zgnr = read_xyz('data/gnr_zigzag_11x12.xyz')
+            agnr = read_xyz('data/gnr_armchair_11x6.xyz')
+            self.samples = np.array([zgnr, agnr])
+            self.samples = transform_data_graphene(self.samples)
+            self.samples = np.expand_dims(self.samples, axis=1)
+            self.samples = self.samples[:,:,0:106,0:106]
+            
+            flipped = np.flip(self.samples.copy(),axis=3)
+            flipped2 = np.flip(self.samples.copy(),axis=2)
+            rot1=np.rot90(self.samples.copy(),k=1,axes=(2,3))
+            rot2=np.rot90(self.samples.copy(),k=2,axes=(2,3))
+            rot3=np.rot90(self.samples.copy(),k=3,axes=(2,3))
+
+            self.samples = np.concatenate((self.samples,rot1,rot3,rot2,flipped,flipped2),axis=0)
+        
+        elif configs.training_dataset == 'armchair':
+            agnr = read_xyz('data/gnr_armchair_11x6.xyz')
+            self.samples = np.array([agnr, agnr])
+            self.samples = transform_data_graphene(self.samples)
+            self.samples = np.expand_dims(self.samples, axis=1)
+            self.samples = self.samples[:,:,0:106,0:106]
+        
+        elif configs.training_dataset == 'zigzag':
+            zgnr = read_xyz('data/gnr_zigzag_11x12.xyz')
+            self.samples = np.array([zgnr, zgnr])
+            self.samples = transform_data_graphene(self.samples)
+            self.samples = np.expand_dims(self.samples, axis=1)
+            self.samples = self.samples[:,:,0:106,0:106]
+
+            # self.samples = np.rot90(self.samples,-1,axes=(2,3))
+            #self.samples = self.samples > 0.3 # coarsening
+
+        assert self.samples.ndim == 4
+
+        self.dataDims = {
+            'classes' : len(np.unique(self.samples)),
+            'input x dim' : self.samples.shape[-1],
+            'input y dim' : self.samples.shape[-2],
+            'channels' : 1, # hardcode as one so we don't get confused with conditioning variables
+            'dataset length' : len(self.samples),
+            'sample x dim' : self.samples.shape[-1] * configs.sample_outpaint_ratio,
+            'sample y dim' : self.samples.shape[-2] * configs.sample_outpaint_ratio,
+            'conv field' : configs.conv_layers + configs.conv_size // 2
+
+        }
+        a_file = open(f"{run_dir}/datadims.pkl", "wb")
+        pickle.dump(self.dataDims, a_file)
+        a_file.close()
+
+        # normalize pixel inputs
+        self.samples[:,0,:,:] = np.array((self.samples[:,0] + 1)/(self.dataDims['classes'])) # normalize inputs on 0--1
+
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx):
         return self.samples[idx]
+
+def transform_data_amorphous(sample):
+    newdata = np.zeros((sample.shape[0], 106, 123))
+    for i in range(0, len(sample)):
+        for j in range(0, sample.shape[1]):
+
+           
+                newdata[i, int((sample[i, j, 2]) / 0.2), int((sample[i, j, 0]) / 0.2)] = 1
+
+    return newdata
+
+def _pixelize_data(samples, nsamples, natoms, icoord,img_shape = (106, 123), pxl2angstrom=0.2):
+    newdata = np.zeros((nsamples, *img_shape))
+    for i in range(0, nsamples):
+        N = natoms[i]
+        for j in range(0, N):
+            pixel_coords = tuple(int((samples[i, j, q]) / pxl2angstrom) for q in icoord) #find pixel containing jth atom of ith sample
+            in_bounds = (pixel_coords[0] < img_shape[0]) & (pixel_coords[1] < img_shape[1])
+            if in_bounds: #ignore any atoms whose coordinates lie outside of the pixel image
+                newdata[i, *pixel_coords] = 1
+    return newdata
+
+
+def transform_data_graphene(samples):
+    nsamples = len(samples)
+    natoms = [sample.shape[0] for sample in samples]
+    return _pixelize_data(samples, nsamples, natoms, icoord=(1,0))    
+
+
+
+def pad_graphene(Nx,Ny,edge_type, npad, pxl2angstrom=0.2, nclasses=2):
+    """Generates a masked pixel image of a graphene nanoribbon, with size (N,N)."""
+    # Unit cell dimensions for GNR type
+    DX_A = 1.2297560733739028
+    DY_A = 2.84
+    DX_Z = 0.71
+    DY_Z = 1.2297560733739028
+
+    if edge_type == 'armchair':
+        dx = DX_A
+        dy = DY_A
+    elif edge_type == 'zigzag':
+        dx = DX_Z
+        dy = DY_Z
+    else:
+        print(f'!!! Invalid edge type {edge_type}. Assuming zigzag edge for what follows. !!!')
+        dx = DX_Z
+        dy = DY_Z
+
+    Nx += 2*npad # pad both left and right sides of image
+    Lx = Nx * pxl2angstrom
+    Ny += npad # pad only top part of image
+    Ly = Ny * pxl2angstrom
+
+    n = 1 + int(Lx // dx) # number of unit cells along x-direction
+    m = 1 + int(Ly // dy) # number of unit cells along y-direction
+
+    gnr = graphene_nanoribbon(n,m,edge_type).positions
+    natoms = [gnr.shape[0]]
+    gnr = gnr[None,:,:] # add axis along first dim to make it compatible with _pixelize_data and the model
+    icoords = (2,0)
+    img = _pixelize_data(gnr, 1, natoms, icoords, img_shape=(Ny,Nx))
+    
+    # Normalize data on [0-1], allowing 0 to be the padding
+    img += 1
+    img /= nclasses
+    
+    #apply mask; zero all pixels expect the padding
+    masked_img = np.zeros((1,1,Ny,Nx))
+    masked_img[0,0, :npad, :] = img[0,:npad, :] #pad top
+    masked_img[0,0, :, :npad] = img[0,:, :npad] #pad left
+    masked_img[0,0, :, -npad:] = img[0,:, -npad:] #pad right
+    
+
+    masked_img = torch.tensor(masked_img)
+    return masked_img
+
 
 
 def get_dir_name(model, training_data, filters, layers, filter_size, dataset_size):

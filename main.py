@@ -1,21 +1,23 @@
+import sys
 from utils import *
 from models import *
 from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
 
-run = get_input()
+#run = get_input()
+run = -1
 ## parameters
 if run == -1:  # user-defined parameters
     # architecture
     model = 1 #1 is Gated PixelCNN
-    filters = 2 # number of convolutional filters or feature maps
-    layers = 2 # number of hidden convolutional layers
+    filters = 20 # number of convolutional filters or feature maps
+    layers = 60 # number of hidden convolutional layers
     bound_type = 0 # type of boundary layer for generation, 0 = empty
     boundary_layers = 2 # number of layers of conv_fields between output sample and boundary
     softmax_temperature = 0 # ratio to batch mean at which softmax will sample, set to 0 to sample at training temperature
 
     # training
-    training_data = 1 # select training set: 1 - nanoparticle aggregate, 2 - MAC
+    training_data = sys.argv[1] # select training set: 1 - nanoparticle aggregate, 2 - MAC
     training_batch = 2048 # size of training and test batches - it will try to run at this size, but if it doesn't fit it will go smaller
     sample_batch_size = 2048  # max batch size for sample generator
     n_samples = 1  # total samples to be generated when we generate, must not be zero (it may make more if there is available memory)
@@ -23,7 +25,7 @@ if run == -1:  # user-defined parameters
     dataset_size = 1000 # the maximum number of samples to consider from our dataset
     train_margin = 1e-3 # the convergence criteria for training error
     average_over = 5 # how many epochs to average over to determine convergence
-    outpaint_ratio = 2 # sqrt of size of output relative to input
+    outpaint_ratio = 3 # sqrt of size of output relative to input
     generation_type = 2 # 1 - fast for many small images, 2 - fast for few, large images
     GPU = 1  # if 1, runs on GPU (requires CUDA), if 0, runs on CPU (slow! and may break some functions)
 else: # when running on cluster, can take arguments from the batch_parameters script
