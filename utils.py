@@ -177,7 +177,6 @@ def get_dir_name(model, training_data, filters, layers, filter_size, dataset_siz
 
     return dir_name
 
-
 def get_model(model, filters, filter_size, layers, out_maps, channels):
     if model == 1:
         net = PixelCNN(filters,filter_size, 1, layers, out_maps,1,channels) # gated, without blind spot
@@ -219,7 +218,7 @@ def initialize_training(model, filters, filter_size, layers, training_data, outp
 
 def load_checkpoint(net, optimizer, dir_name, GPU, prev_epoch):
     if os.path.exists('ckpts/' + dir_name[:]):  #reload model if we have trained one before
-        checkpoint = torch.load('ckpts/' + dir_name[:])
+        checkpoint = torch.load(f'ckpts/{dir_name}/epoch-{prev_epoch}.pt')
 
         if list(checkpoint['model_state_dict'])[0][0:6] == 'module':  # when we use dataparallel it breaks the state_dict - fix it by removing word 'module' from in front of everything
             for i in list(checkpoint['model_state_dict']):
@@ -372,10 +371,12 @@ def auto_convergence(train_margin, average_over, epoch, prev_epoch, net, optimiz
         save_ckpt(epoch, net, optimizer, dir_name[:] +'_ckpt_-{}'.format(average_over - (epoch - prev_epoch)))
 
     if (epoch - prev_epoch) > average_over:
-        os.remove('ckpts/'+dir_name[:]+'_ckpt_-{}'.format(average_over - 1))  # delete trailing checkpoint
-        for i in range(average_over - 2, -1, -1):  # move all previous checkpoints
-            os.rename('ckpts/'+dir_name[:]+'_ckpt_-{}'.format(i), 'ckpts/'+dir_name[:]+'_ckpt_-{}'.format(i + 1))
-        save_ckpt(epoch, net, optimizer, dir_name[:]+'_ckpt_-{}'.format(0))  # save new checkpoint
+        save_ckpt(epoch, net, optimizer, f'ckpts/{dir_name}_epoch-{epoch}.pt')
+        # os.remove('ckpts/'+dir_name[:]+'_ckpt_-{}'.format(average_over - 1))  # delete trailing checkpoint
+        # for i in range(average_over - 2, -1, -1):  # move all previous checkpoints
+        #     os.rename('ckpts/'+dir_name[:]+'_ckpt_-{}'.format(i), 'ckpts/'+dir_name[:]+'_ckpt_-{}'.format(i + 1))
+        # save_ckpt(epoch, net, optimizer, dir_name[:]+'_ckpt_-{}'.format(0))  # save new checkpoint
+
 
         tr_mean, te_mean = [torch.mean(torch.stack(tr_err_hist[-average_over:])), torch.mean(torch.stack(te_err_hist[-average_over:]))]
         if (torch.abs((tr_mean - tr_err_hist[-average_over]) / tr_mean) < train_margin) or ((torch.abs(te_mean - tr_mean) / tr_mean) > test_margin) or ((epoch - prev_epoch) == max_epochs):# or (te_mean > te_err_hist[-average_over]):
@@ -418,7 +419,7 @@ def generation(generation_type, dir_name, input_analysis, outpaint_ratio, epoch,
 
     sample, time_ge, sample_batch_size, n_samples = generate_samples_gated(generation_type, n_samples, sample_batch_size, sample_x_dim, sample_y_dim, conv_field, net, bound_type, GPU, cuda, training_data, out_maps, boundary_layers, channels, softmax_temperature, dataset_size, model)  # generate samples
 
-    np.save('samples/' + dir_name[:] + '_T=%.3f'%softmax_temperature, sample)
+    np.save(f'samples/{dir_name}/epoch-{epoch}.npy', sample)
     if n_samples != 0:
         print('Generated samples')
 
@@ -737,7 +738,7 @@ def save_outputs(dir_name, sample_analysis, sample, softmax_temperature, epoch):
     output['sample analysis'] = sample_analysis
     output['sample'] = sample
 
-    with open('outputs/'+dir_name[:] + '_T=%.3f'%softmax_temperature +'_epoch=%d'%epoch+'.pkl', 'wb') as f:
+    with open(f'outputs/{dir_name}/epoch-{epoch}.pkl', 'wb') as f:
         pickle.dump(output, f, pickle.HIGHEST_PROTOCOL)
 
     # to load
@@ -748,7 +749,7 @@ def save_outputs(dir_name, sample_analysis, sample, softmax_temperature, epoch):
 
 
 def save_ckpt(epoch, net, optimizer, dir_name):
-    torch.save({'epoch': epoch, 'model_state_dict': net.state_dict(), 'optimizer_state_dict': optimizer.state_dict()}, 'ckpts/' + dir_name[:])
+    torch.save({'epoch': epoch, 'model_state_dict': net.state_dict(), 'optimizer_state_dict': optimizer.state_dict()}, f'ckpts/{dir_name}/epoch-{epoch}.pt')
     #np.save('samples/' + dir_name[:] + '_epoch=%d' % epoch, sample)
 
 ## some useful scripts

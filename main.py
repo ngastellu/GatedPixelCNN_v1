@@ -56,7 +56,15 @@ if GPU == 1:
     backends.cudnn.benchmark = True  # auto-optimizes certain backend processes
 
 filter_size = 3  # initial layer kernel size MUST BE 3 IN CURRENT IMPLEMENTATION
-dir_name = get_dir_name(model, training_data, filters, layers, filter_size, dataset_size)  # get directory name for I/O
+# dir_name = get_dir_name(model, training_data, filters, layers, filter_size, dataset_size)  # get directory name for I/O
+dir_name = training_data
+os.makedirs(f'outputs/{dir_name}', exist_ok=True)
+os.makedirs(f'ckpts/{dir_name}', exist_ok=True)
+os.makedirs(f'samples/{dir_name}', exist_ok=True)
+os.makedirs(f'logfiles/{dir_name}', exist_ok=True)
+os.makedirs(f'raw_outputs/{dir_name}', exist_ok=True)
+
+
 writer = SummaryWriter('logfiles/'+dir_name[:]+'_T=%.3f'%softmax_temperature)  # initialize tensorboard writer
 
 prev_epoch = 0
@@ -112,10 +120,10 @@ if __name__ == '__main__':  # run it!
             te_err_hist.append(torch.mean(torch.stack(err_te)))
             print('epoch={}; nll_tr={:.5f}; nll_te={:.5f}; time_tr={:.1f}s; time_te={:.1f}s'.format(epoch, torch.mean(torch.stack(err_tr)), torch.mean(torch.stack(err_te)), time_tr, time_te))
 
-            save_ckpt(epoch, net, optimizer, dir_name[:]) #save checkpoint
+            save_ckpt(epoch, net, optimizer, dir_name) #save checkpoint
 
             # check if we have converged, according to parameters computed in auto_convergence
-            converged = auto_convergence(train_margin, average_over, epoch, prev_epoch, net, optimizer, dir_name, tr_err_hist, te_err_hist, max_epochs)
+            # converged = auto_convergence(train_margin, average_over, epoch, prev_epoch, net, optimizer, dir_name, tr_err_hist, te_err_hist, max_epochs)
 
             epoch += 1
 
