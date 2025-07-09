@@ -6,6 +6,7 @@ import time
 import pickle
 from torch.utils.data import Dataset
 from os import listdir
+from glob import glob
 from os.path import isfile, join
 import sys
 import tqdm
@@ -215,9 +216,15 @@ def initialize_training(model, filters, filter_size, layers, training_data, outp
 
     return net, conv_field, optimizer, sample_0, input_x_dim, input_y_dim, sample_x_dim, sample_y_dim
 
+def max_epoch(dir_name):
+    ckpts = glob(f'ckpts/{dir_name}/epoch-*.pt')
+    max_epoch = max([int(c.split('/')[-1].split('-')[1].split('.')[0]) for c in ckpts])
+    return max_epoch
+
+
 
 def load_checkpoint(net, optimizer, dir_name, GPU, prev_epoch):
-    if os.path.exists('ckpts/' + dir_name[:]):  #reload model if we have trained one before
+    if prev_epoch > 0 and  os.path.exists('ckpts/' + dir_name[:]):  #reload model if we have trained one before
         checkpoint = torch.load(f'ckpts/{dir_name}/epoch-{prev_epoch}.pt')
 
         if list(checkpoint['model_state_dict'])[0][0:6] == 'module':  # when we use dataparallel it breaks the state_dict - fix it by removing word 'module' from in front of everything
@@ -419,7 +426,7 @@ def generation(generation_type, dir_name, input_analysis, outpaint_ratio, epoch,
 
     sample, time_ge, sample_batch_size, n_samples = generate_samples_gated(generation_type, n_samples, sample_batch_size, sample_x_dim, sample_y_dim, conv_field, net, bound_type, GPU, cuda, training_data, out_maps, boundary_layers, channels, softmax_temperature, dataset_size, model)  # generate samples
 
-    np.save(f'samples/{dir_name}/epoch-{epoch}.npy', sample)
+    np.save(f'samples/{dir_name}/epoch-{epoch}_{bound_type}.npy', sample)
     if n_samples != 0:
         print('Generated samples')
 
@@ -496,8 +503,14 @@ def generate_samples_gated(generation_type, n_samples, sample_batch_size, sample
 
         for batch in range(batches):  # can't always do these all at once so we do it in batches
             print('Batch {} of {} batches'.format(batch + 1, batches))
-            sample_batch = torch.FloatTensor(sample_batch_size, channels, sample_y_padded + 2 * conv_field + 1 - conv_field, sample_x_padded + 2 * conv_field)  # needs to be explicitly padded by the convolutional field
-            sample_batch.fill_(0)  # initialize with minimum value
+            if bound_type == 'empty':
+                sample_batch = torch.FloatTensor(sample_batch_size, channels, sample_y_padded + 2 * conv_field + 1 - conv_field, sample_x_padded + 2 * conv_field)  # needs to be explicitly padded by the convolutional field
+                sample_batch.fill_(0)  # initialize with minimum value
+            else:
+                Nx = sample_x_padded + 2 * conv_field
+                Ny = sample_y_padded + conv_field + 1
+                sample_batch = pad_graphene(Nx, Ny, bound_type, 0) #padding already accounted for in Nx and Ny
+
 
             if GPU == 1:
                 sample_batch = sample_batch.cuda()

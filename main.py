@@ -12,7 +12,7 @@ if run == -1:  # user-defined parameters
     model = 1 #1 is Gated PixelCNN
     filters = 20 # number of convolutional filters or feature maps
     layers = 60 # number of hidden convolutional layers
-    bound_type = 0 # type of boundary layer for generation, 0 = empty
+    bound_type = sys.argv[2]# type of boundary layer for generation, 0 = empty
     boundary_layers = 2 # number of layers of conv_fields between output sample and boundary
     softmax_temperature = 0 # ratio to batch mean at which softmax will sample, set to 0 to sample at training temperature
 
@@ -28,6 +28,7 @@ if run == -1:  # user-defined parameters
     outpaint_ratio = 3 # sqrt of size of output relative to input
     generation_type = 2 # 1 - fast for many small images, 2 - fast for few, large images
     GPU = 1  # if 1, runs on GPU (requires CUDA), if 0, runs on CPU (slow! and may break some functions)
+    reload_model = False
 else: # when running on cluster, can take arguments from the batch_parameters script
     with open('batch_parameters.pkl', 'rb') as f:
         inputs = pickle.load(f)
@@ -65,11 +66,14 @@ os.makedirs(f'logfiles/{dir_name}', exist_ok=True)
 os.makedirs(f'raw_outputs/{dir_name}', exist_ok=True)
 
 
-writer = SummaryWriter('logfiles/'+dir_name[:]+'_T=%.3f'%softmax_temperature)  # initialize tensorboard writer
+writer = SummaryWriter(f'logfiles/{dir_name}.log')  # initialize tensorboard writer
 
-prev_epoch = 0
 if __name__ == '__main__':  # run it!
     net, conv_field, optimizer, sample_0, input_x_dim, input_y_dim, sample_x_dim, sample_y_dim = initialize_training(model, filters, filter_size, layers, training_data, outpaint_ratio, dataset_size)
+    if reload_model:
+        prev_epoch = max_epoch(dir_name)
+    else:
+        prev_epoch = 0
     net, optimizer, prev_epoch = load_checkpoint(net, optimizer, dir_name, GPU, prev_epoch)
     channels = sample_0.shape[1] # must be 1 or this isn't going to work
     out_maps = len(np.unique(sample_0)) + 1 # need n_classes + 1 outputs (explicit padding is encoded as 0, empty as 0.5, filled as 1)
@@ -91,7 +95,6 @@ if __name__ == '__main__':  # run it!
 
     ## BEGIN TRAINING/GENERATION
     if run_epochs == 0:  # no training, just generate and analyze samples
-        prev_epoch += 1
         epoch = prev_epoch
         training_batch = 1
         tr, te = get_dataloaders(training_data, training_batch)
