@@ -193,9 +193,9 @@ def get_model(model, filters, filter_size, layers, out_maps, channels):
     return net, conv_field
 
 
-def get_dataloaders(training_data, training_batch, dataset_size):
-    dataset = build_dataset(training_data, dataset_size)  # get data
-    train_size = int(0.8 * len(dataset))  # split data 80:20 into training and test sets
+def get_dataloaders(training_data, training_batch):
+    dataset = build_dataset(training_data)  # get data
+    train_size = max([1, int(0.8 * len(dataset))])  # split data 80:20 into training and test sets
     test_size = len(dataset) - train_size
     train_dataset, test_dataset = torch.utils.data.Subset(dataset, [range(train_size),range(train_size,test_size + train_size)])  # split it the same way every time it's loaded
     tr = data.DataLoader(train_dataset, batch_size=training_batch, shuffle=True, num_workers= 0, pin_memory=True)  # build dataloaders
@@ -205,7 +205,7 @@ def get_dataloaders(training_data, training_batch, dataset_size):
 
 
 def initialize_training(model, filters, filter_size, layers, training_data, outpaint_ratio, dataset_size):
-    tr, te = get_dataloaders(training_data, 4, dataset_size)
+    tr, te = get_dataloaders(training_data, 1)
     sample_0 = next(iter(tr)) # pull a training saple
     out_maps = len(np.unique(sample_0)) + 1 # determine the number of output classes (class 0 is always padding)
     channels = sample_0.shape[1] # currently setup for 1 input/output channel only. Multi-channel support can be built in with masked filters.
@@ -256,7 +256,7 @@ def get_training_batch_size(training_data, training_batch, model, filters, filte
     #  test various batch sizes to see the max we can store in memory
     finished = 0
     training_batch_0 = 1 * training_batch
-    test_dataset = build_dataset(training_data, dataset_size)
+    test_dataset = build_dataset(training_data)
     while (training_batch > 1) & (finished == 0):
         try:
             test_batch(test_dataset, training_batch, model, filters, filter_size, layers, out_maps, channels, GPU)
@@ -399,7 +399,7 @@ def get_generator(model, filters, filter_size, layers, out_maps, channels, paddi
     return net
 
 def get_raw_output(training_data, net, dir_name, out_maps):
-    tr, te = get_dataloaders(training_data, 4, 100)  # get something from the dataset
+    tr, te = get_dataloaders(training_data, 1)  # get something from the dataset
     example = next(iter(tr)).cuda()  # get seeds from test set
     raw_out = net(example[0:2, :, :, :].float())
     raw_out = F.softmax(raw_out, dim=1)
@@ -638,7 +638,7 @@ def generate_samples_gated(generation_type, n_samples, sample_batch_size, sample
 
 def analyse_inputs(training_data, out_maps, dataset_size):
     # perform analysis of training data
-    dataset = torch.Tensor(build_dataset(training_data, dataset_size))  # get data
+    dataset = torch.Tensor(build_dataset(training_data))  # get data
     dataset = dataset * (out_maps - 1) - 1 # transform basis
 
     input_analysis = analyse_samples(dataset, training_data)

@@ -85,13 +85,8 @@ if __name__ == '__main__':  # run it!
     if run_epochs == 0:  # no training, just generate and analyze samples
         prev_epoch += 1
         epoch = prev_epoch
-
-        training_batch, changed = get_training_batch_size(training_data, training_batch, model, filters, filter_size, layers, out_maps, channels, dataset_size, GPU)  # confirm we can keep on at this batch size
-        if changed == 1:  # if the training batch is different, we have to adjust our batch sizes and dataloaders
-            tr, te = get_dataloaders(training_data, training_batch, dataset_size)
-            print('Training batch set to {}'.format(training_batch))
-        else:
-            tr, te = get_dataloaders(training_data, training_batch, dataset_size)
+        training_batch = 1
+        tr, te = get_dataloaders(training_data, training_batch)
 
         sample, time_ge, n_samples, agreements, output_analysis = generation(generation_type, dir_name, input_analysis, outpaint_ratio, epoch, model, filters, filter_size, layers, net, writer, te, out_maps, conv_field, sample_x_dim, sample_y_dim, n_samples, sample_batch_size, bound_type, training_data, boundary_layers, channels, softmax_temperature, dataset_size, GPU, cuda)
 
