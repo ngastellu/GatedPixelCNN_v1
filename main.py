@@ -18,7 +18,7 @@ if run == -1:  # user-defined parameters
 
     # training
     training_data = sys.argv[1] # select training set: 1 - nanoparticle aggregate, 2 - MAC
-    training_batch = 2048 # size of training and test batches - it will try to run at this size, but if it doesn't fit it will go smaller
+    training_batch = 1 #2048 # size of training and test batches - it will try to run at this size, but if it doesn't fit it will go smaller
     sample_batch_size = 2048  # max batch size for sample generator
     n_samples = 1  # total samples to be generated when we generate, must not be zero (it may make more if there is available memory)
     run_epochs = 1000 # number of incremental epochs which will be trained over - if zero, will run just the generator
@@ -102,14 +102,15 @@ if __name__ == '__main__':  # run it!
         te_err_hist = []
         while (epoch <= (max_epochs + 1)) & (converged == 0): # until we converge or hit epoch limit
 
-            if (epoch - prev_epoch) < 3: # we can massage the sample batch size for the first few epochs
-                training_batch, changed = get_training_batch_size(training_data, training_batch, model, filters, filter_size, layers, out_maps, channels, dataset_size, GPU)  # confirm we can keep on at this batch size
-                if changed == 1: # if the training batch is different, we have to adjust our batch sizes and dataloaders
-                    tr, te = get_dataloaders(training_data, training_batch, dataset_size)
-                    print('Training batch set to {}'.format(training_batch))
-                else:
-                    tr, te = get_dataloaders(training_data, training_batch, dataset_size)
+            # if (epoch - prev_epoch) < 3: # we can massage the sample batch size for the first few epochs
+            #     training_batch, changed = get_training_batch_size(training_data, training_batch, model, filters, filter_size, layers, out_maps, channels, dataset_size, GPU)  # confirm we can keep on at this batch size
+            #     if changed == 1: # if the training batch is different, we have to adjust our batch sizes and dataloaders
+            #         tr, te = get_dataloaders(training_data, training_batch, dataset_size)
+            #         print('Training batch set to {}'.format(training_batch))
+            #     else:
+            #         tr, te = get_dataloaders(training_data, training_batch, dataset_size)
 
+            tr, te = get_dataloaders(training_data, training_batch)
             err_tr, time_tr = train_net(net, optimizer, writer, tr, epoch, out_maps, GPU, cuda)  # train & compute loss
             err_te, time_te = test_net(net, writer, te, out_maps, epoch, GPU, cuda)  # compute loss on test set
             tr_err_hist.append(torch.mean(torch.stack(err_tr)))

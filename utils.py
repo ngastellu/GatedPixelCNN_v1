@@ -173,7 +173,7 @@ def pad_graphene(Nx,Ny,edge_type, npad, pxl2angstrom=0.2, nclasses=2):
 
 
 def get_dir_name(model, training_data, filters, layers, filter_size, dataset_size):
-    dir_name = "model=%d_dataset=%d_dataset_size=%d_filters=%d_layers=%d_filter_size=%d" % (model, training_data, dataset_size, filters, layers, filter_size)  # directory where tensorboard logfiles will be saved
+    dir_name = "model=%d_dataset=%s_dataset_size=%d_filters=%d_layers=%d_filter_size=%d" % (model, training_data, dataset_size, filters, layers, filter_size)  # directory where tensorboard logfiles will be saved
 
     return dir_name
 
